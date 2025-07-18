@@ -4,7 +4,8 @@ Example homebrew app for psvita using sokol_gfx and OpenGL ES 2.0.
 This code is a fork of [psvita_sokol_example](https://github.com/valiet/psvita_sokol_example) ported to PVR_PSP2.
 
 ### Setup:
-- Download [PVR_PSP2](https://github.com/GrapheneCt/PVR_PSP2) latest release, unpack to ``
+- `cmake -S . -B builddir`
+- `cmake --build builddir`
 
 ### Notes:
 - Examples how to use the sokol library are found at [sokol_samples](https://github.com/floooh/sokol-samples).
