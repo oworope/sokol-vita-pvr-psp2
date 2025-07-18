@@ -1,9 +1,10 @@
 # PS Vita OpenGL ES 2.0 App using sokol
- Example homebrew app for psvita using sokol_gfx and OpenGL ES 2.0.
+Example homebrew app for psvita using sokol_gfx and OpenGL ES 2.0.
+
+This code is a fork of [psvita_sokol_example](https://github.com/valiet/psvita_sokol_example) ported to PVR_PSP2.
 
 ### Setup:
-- Install [DolceSDK](https://github.com/DolceSDK/doc)
-- Install [Pigs-In-A-Blanket](https://github.com/SonicMastr/Pigs-In-A-Blanket)
+- Download [PVR_PSP2](https://github.com/GrapheneCt/PVR_PSP2) latest release, unpack to ``
 
 ### Notes:
 - Use `make vpksend` to transfer the *.vpk to your psvita `ux0:/data` folder, dont forget to setup `PSVITAIP` cmake variable. (default `192.168.178.32`) 

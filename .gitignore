@@ -10,7 +10,11 @@
 # Allow these folders
 !sce_sys/
 !src/
+!PVR_PSP2/
+!module/
 
 # Allow the contents of these folders
 !sce_sys/**
 !src/**
+!PVR_PSP2/**
+!module/**

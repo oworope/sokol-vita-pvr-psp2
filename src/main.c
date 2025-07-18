@@ -1,14 +1,16 @@
-
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
 
-#include <psp2/kernel/clib.h> 
+#include <psp2/kernel/clib.h>
+#include <psp2/kernel/modulemgr.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/gxm.h>
 #include <psp2/ctrl.h>
 #include <psp2/touch.h>
-#include <pib.h>
+
+#include <PVR_PSP2/EGL/eglplatform.h>
+#include <PVR_PSP2/gpu_es4/psp2_pvr_hint.h>
 
 #define SCE_DISPLAY_WIDTH  960
 #define SCE_DISPLAY_HEIGHT 544
@@ -28,13 +30,13 @@
 #define	SCE_CTRL_PAD_MAX_NUM 4
 
 #define GL_GLEXT_PROTOTYPES
-#include <EGL/egl.h>
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
+#include <PVR_PSP2/EGL/egl.h>
+#include <PVR_PSP2/GLES2/gl2.h>
+#include <PVR_PSP2/GLES2/gl2ext.h>
 
 // ANGLE functions not supported. error: arm-dolce-eabi/bin/ld.exe: main.c:(.text+0x5e1a): undefined reference to `glDrawArraysInstancedANGLE'
 // sokol_gfx checks for GL_ANGLE_instanced_arrays first then GL_EXT_draw_instanced so undef it ???
-#undef GL_ANGLE_instanced_arrays 
+// #undef GL_ANGLE_instanced_arrays 
 #define SOKOL_IMPL
 #define SOKOL_GLES2
 #include "sokol_gfx.h"
@@ -44,51 +46,123 @@
 #define SOKOL_GL_IMPL
 #include "sokol_gl.h"
 
+//SCE
+int _newlib_heap_size_user   = 16 * 1024 * 1024;
+unsigned int sceLibcHeapSize = 3 * 1024 * 1024;
+
+//EGL
+EGLDisplay display;
+EGLConfig config;
+EGLSurface surface;
+EGLContext context;
+EGLint NumConfigs, MajorVersion, MinorVersion;
+EGLint ConfigAttr[] =
+{
+	EGL_BUFFER_SIZE, EGL_DONT_CARE,
+	EGL_DEPTH_SIZE, 16,
+	EGL_RED_SIZE, 8,
+	EGL_GREEN_SIZE, 8,
+	EGL_BLUE_SIZE, 8,
+	EGL_ALPHA_SIZE, 8,
+	EGL_STENCIL_SIZE, 8,
+	EGL_SURFACE_TYPE, 5,
+	EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+	EGL_NONE
+};
+EGLint ContextAttributeList[] = 
+{
+	EGL_CONTEXT_CLIENT_VERSION, 2,
+	EGL_NONE
+};
+
+static EGLint surface_width, surface_height;
+
 #define math_lerp(value, from_max, to_max) (((((value)*10) * ((to_max)*10))/((from_max)*10))/10)
 
+void ModuleInit()
+{
+	sceKernelLoadStartModule("vs0:sys/external/libfios2.suprx", 0, NULL, 0, NULL, NULL);
+	sceKernelLoadStartModule("vs0:sys/external/libc.suprx", 0, NULL, 0, NULL, NULL);
+	sceKernelLoadStartModule("app0:module/libgpu_es4_ext.suprx", 0, NULL, 0, NULL, NULL);
+  	sceKernelLoadStartModule("app0:module/libIMGEGL.suprx", 0, NULL, 0, NULL, NULL);
+	sceClibPrintf("Module init OK\n");
+}
+
+void PVR_PSP2Init()
+{
+	PVRSRV_PSP2_APPHINT hint;
+  	PVRSRVInitializeAppHint(&hint);
+  	PVRSRVCreateVirtualAppHint(&hint);
+	sceClibPrintf("PVE_PSP2 init OK.\n");
+}
+
+void EGLInit()
+{
+	EGLBoolean Res;
+	display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+	if(!display)
+	{
+		sceClibPrintf("EGL display get failed.\n");
+		return;
+	}
+
+	Res = eglInitialize(display, &MajorVersion, &MinorVersion);
+	if (Res == EGL_FALSE)
+	{
+		sceClibPrintf("EGL initialize failed.\n");
+		return;
+	}
+
+	//PIB cube demo
+	eglBindAPI(EGL_OPENGL_ES_API);
+
+	Res = eglChooseConfig(display, ConfigAttr, &config, 1, &NumConfigs);
+	if (Res == EGL_FALSE)
+	{
+		sceClibPrintf("EGL config initialize failed.\n");
+		return;
+	}
+
+	surface = eglCreateWindowSurface(display, config, (EGLNativeWindowType)0, NULL);
+	if(!surface)
+	{
+		sceClibPrintf("EGL surface create failed.\n");
+		return;
+	}
+
+	context = eglCreateContext(display, config, EGL_NO_CONTEXT, ContextAttributeList);
+	if(!context)
+	{
+		sceClibPrintf("EGL content create failed.\n");
+		return;
+	}
+
+	eglMakeCurrent(display, surface, surface, context);
+
+	// PIB cube demo
+	eglQuerySurface(display, surface, EGL_WIDTH, &surface_width);
+	eglQuerySurface(display, surface, EGL_HEIGHT, &surface_height);
+	sceClibPrintf("Surface Width: %d, Surface Height: %d\n", surface_width, surface_height);
+	glClearDepthf(1.0f);
+	glClearColor(0.0f,0.0f,0.0f,1.0f); // You can change the clear color to whatever
+	 
+	glEnable(GL_CULL_FACE);
+
+	sceClibPrintf("EGL init OK.\n");
+}
+
+void EGLEnd()
+{
+	eglDestroySurface(display, surface);
+  	eglDestroyContext(display, context);
+  	eglTerminate(display);
+	sceClibPrintf("EGL terminated.\n");
+}
 
 int main(int args, char *argv[]) {
-    /*     
-    *   Always initialize PIB before callling any EGL/GLES functions 
-    *   Enable the ShaccCg Shader Compiler 'PIB_SHACCCG' and Enabled -nostdlib support 'PIB_NOSTDLIB'(No need if you don't use -nostdlib)
-    */
-    pibInit(PIB_SHACCCG);
-
-    EGLDisplay egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-
-    EGLint egl_majorVersion;
-    EGLint egl_minorVersion;
-    eglInitialize(egl_display, &egl_majorVersion, &egl_minorVersion);  
-
-    eglBindAPI(EGL_OPENGL_ES_API);
-
-    EGLint egl_numConfigs = 0;
-    EGLConfig egl_config;
-    EGLint egl_configAttribs[] = {
-        //EGL_CONFIG_ID, 2,                         // You can always provide a configuration id. The one displayed here is Configuration 2
-        EGL_RED_SIZE, 8,                            // These four are always 8
-        EGL_GREEN_SIZE, 8,                          //
-        EGL_BLUE_SIZE, 8,                           //
-        EGL_ALPHA_SIZE, 8,                          //
-        EGL_DEPTH_SIZE, 32,                         // Depth is either 32 or 0
-        EGL_STENCIL_SIZE, 8,                        //  Stencil Size is either 8 or 0
-        EGL_SURFACE_TYPE, 5,                        // This is ALWAYS 5
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,    // Always EGL_OPENGL_ES2_BIT or 0x4
-        EGL_NONE};
-
-    eglChooseConfig(egl_display, egl_configAttribs, &egl_config, 1, &egl_numConfigs);
-    // You can choose your display resoltion, up to 1080p on the PSTV (Vita requires SharpScale)
-    EGLSurface egl_surface = eglCreateWindowSurface(egl_display, egl_config, VITA_WINDOW_960X544, NULL);  
-
-    const EGLint egl_contextAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
-
-    EGLContext egl_context = eglCreateContext(egl_display, egl_config, EGL_NO_CONTEXT, egl_contextAttribs);
-
-    eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
-
-    EGLint egl_surface_width = 0, egl_surface_height = 0;
-    eglQuerySurface(egl_display, egl_surface, EGL_WIDTH, &egl_surface_width);
-    eglQuerySurface(egl_display, egl_surface, EGL_HEIGHT, &egl_surface_height);
+    ModuleInit();
+    PVR_PSP2Init();
+    EGLInit();
 
     // gamepad
     SceCtrlData ctrl_pad_one = { 0 };
@@ -234,7 +308,7 @@ int main(int args, char *argv[]) {
         }
 		
         
-        sdtx_canvas(egl_surface_width*0.5f, egl_surface_height*0.5f);     
+        sdtx_canvas(surface_width*0.5f, surface_height*0.5f);     
         sdtx_home();
         sdtx_color4b(0x00, 0xff, 0x00, 0xff);
         sdtx_puts("Hello world\n");
@@ -303,29 +377,20 @@ int main(int args, char *argv[]) {
         sgl_end();
 
 
-        sg_begin_default_pass(&pass_action, egl_surface_width, egl_surface_height);    
+        sg_begin_default_pass(&pass_action, surface_width, surface_height);    
             sgl_draw();
             sdtx_draw();
         sg_end_pass();
         sg_commit();
 
-        eglSwapBuffers(egl_display, egl_surface);
+        eglSwapBuffers(display, surface);
     }
     sgl_shutdown();
     sdtx_shutdown();
     sg_shutdown();
 
-    eglDestroyContext(egl_display, egl_context); 
-    eglDestroySurface(egl_display, egl_surface);
-    eglTerminate(egl_display);
+    EGLEnd();
 
     sceKernelExitProcess(0);
     return 0;
 }
-
-/* needed for -nostdlib support
-void _start(unsigned int args, void *argp)
-{
-    main(args, argp);
-}
-*/
